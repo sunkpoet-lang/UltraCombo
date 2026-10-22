@@ -122,6 +122,34 @@ static void set_fullscreen(bool on)
     choose_pacing();
 }
 
+// Menu changes to the display are applied once the choice has settled:
+// switching at every step of a cycle, exclusive modes especially, can lose
+// the window under XWayland on GNOME. want_display: -1 = none pending, else
+// 0 off, 1 borderless, 2 exclusive (cfg.fullscreen_exclusive already says which).
+static int want_display = -1;
+static uint32_t display_due;
+
+static int shown_display(void)
+{
+    if (want_display >= 0) return want_display;
+    return !fullscreen ? 0 : cfg.fullscreen_exclusive ? 2 : 1;
+}
+
+static void request_display(int m)
+{
+    want_display = m;
+    display_due = SDL_GetTicks() + 400;
+}
+
+// now: apply a pending change at once (closing the menu, quitting)
+static void settle_display(bool now)
+{
+    if (want_display < 0 || (!now && !SDL_TICKS_PASSED(SDL_GetTicks(), display_due))) return;
+    int m = want_display;
+    want_display = -1;
+    set_fullscreen(m != 0);                 // exclusive to exclusive: the mode changes in place
+}
+
 static void draw_menu(uint32_t *ov);
 static void draw_inputs(uint32_t *ov);
 
@@ -591,13 +619,6 @@ static int display_modes(SDL_DisplayMode *out, int max)
     return n;
 }
 
-static void apply_fullscreen_mode(void)
-{
-    if (!fullscreen) return;
-    SDL_SetWindowFullscreen(win, 0);
-    set_fullscreen(true);
-}
-
 /* --- drawing --- */
 
 // Rows that don't apply to this game.
@@ -658,7 +679,8 @@ static void draw_menu(uint32_t *out)
         static const char *const scale_names[] = { "Fit 4:3", "Integer", "Stretch" };
         static const char *const pacing_names[] = { "Auto", "Audio", "Vsync" };
         title = "GRAPHICS";
-        snprintf(b[G_FULLSCREEN], 72, "Fullscreen\t< %s >", !fullscreen ? "Off" : cfg.fullscreen_exclusive ? "Exclusive" : "Borderless");
+        static const char *const display_names[] = { "Off", "Borderless", "Exclusive" };
+        snprintf(b[G_FULLSCREEN], 72, "Fullscreen\t< %s >", display_names[shown_display()]);
         snprintf(b[G_MODE], 72, "Exclusive mode\t< %s >", *cfg.fullscreen_mode ? cfg.fullscreen_mode : "Desktop");
         int ww, wh;
         SDL_GetWindowSize(win, &ww, &wh);
@@ -794,6 +816,7 @@ static void menu_close(void)
     menu_page = PG_MAIN;
     capturing = -1;
     if (editing >= 0) { editing = -1; SDL_StopTextInput(); }
+    settle_display(true);
     if (menu_changed) {
         cfg.volume = volume;
         cfg.fullscreen = fullscreen;
@@ -859,10 +882,10 @@ static void menu_change(int dir)
     case PG_GRAPHICS:
         switch (menu_sel) {
         case G_FULLSCREEN: {
-            int m = !fullscreen ? 0 : cfg.fullscreen_exclusive ? 2 : 1;
+            int m = shown_display();
             cycle(&m, 3, d);
             cfg.fullscreen_exclusive = m == 2;
-            if (fullscreen && m) apply_fullscreen_mode(); else set_fullscreen(m != 0);
+            request_display(m);
             break;
         }
         case G_MODE: {
@@ -878,11 +901,11 @@ static void menu_change(int dir)
             if (cur >= n) cur = -1;
             if (cur < 0) cfg.fullscreen_mode[0] = 0;
             else snprintf(cfg.fullscreen_mode, sizeof cfg.fullscreen_mode, "%dx%d@%d", modes[cur].w, modes[cur].h, modes[cur].refresh_rate);
-            if (fullscreen && cfg.fullscreen_exclusive) apply_fullscreen_mode();
+            if (shown_display() == 2) request_display(2);
             break;
         }
         case G_WINDOW: {
-            if (fullscreen) { osd_message("Leave fullscreen to resize the window"); return; }
+            if (shown_display()) { osd_message("Leave fullscreen to resize the window"); return; }
             int ww, wh;
             SDL_GetWindowSize(win, &ww, &wh);
             int k = (wh + 120) / 240 + d;
@@ -1117,6 +1140,7 @@ static void capture(SDL_Scancode key, int pad_button, bool clear)
 /* returns false to quit */
 static bool handle_events(void)
 {
+    settle_display(false);
     SDL_Event ev;
     while (SDL_PollEvent(&ev)) {
         pad_prompt_event(&pad_prompt, &ev);
@@ -1172,7 +1196,12 @@ static bool handle_events(void)
                 break;
             }
             if (ev.key.repeat && !is_hotkey(sc, HK_VOL_UP) && !is_hotkey(sc, HK_VOL_DOWN) && !is_hotkey(sc, HK_STEP)) break;
-            if (alt_enter || is_hotkey(sc, HK_FULLSCREEN)) { set_fullscreen(!fullscreen); menu_changed = true; }
+            if (alt_enter || is_hotkey(sc, HK_FULLSCREEN)) {
+                bool on = shown_display() == 0;
+                want_display = -1;
+                set_fullscreen(on);
+                menu_changed = true;
+            }
             else if (in_netplay() && (is_hotkey(sc, HK_PAUSE) || is_hotkey(sc, HK_STEP) || is_hotkey(sc, HK_LOAD_STATE) ||
                                       is_hotkey(sc, HK_TRAINING) || is_hotkey(sc, HK_DUMMY_RECORD) || is_hotkey(sc, HK_DUMMY_PLAY)))
                 not_in_netplay();
@@ -1503,6 +1532,7 @@ int frontend_main(void)
         }
     }
     if (menu_changed) menu_close();
+    settle_display(true);
     if (!fullscreen) {
         SDL_GetWindowPosition(win, &cfg.window_x, &cfg.window_y);
         SDL_GetWindowSize(win, &cfg.window_w, &cfg.window_h);
