@@ -99,10 +99,10 @@ build-win/ki2.ico: ultracombo
 
 build-win/ki2-res.o: src/ki2.rc build-win/ki2.ico
 	x86_64-w64-mingw32-windres -I build-win -o $@ src/ki2.rc
+	mkdir -p dist/windows/run
 	cp $(WIN_SDL)/bin/SDL2.dll README.md dist/windows/
 	rm -rf dist/windows/shaders && cp -r shaders dist/windows/
 	cp $(WIN_SDL)/../README-SDL.txt dist/windows/SDL2-README.txt
-	mkdir -p dist/windows/run
 
 build-win/%.o: src/%.c src/*.h
 	@mkdir -p $(dir $@)
