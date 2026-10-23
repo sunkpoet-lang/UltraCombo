@@ -101,8 +101,9 @@ as "SHA1" (the one MAME uses):
 
 Start `ultracombo` (`UltraCombo.exe` on Windows; the AppImage on Linux).
 With both games installed it asks which to play: left/right (or a click)
-chooses, Enter or A starts. It remembers the last choice. With one game
-installed it starts that one straight away. Menu → **Change game** goes back
+chooses, Enter or the controller select button starts (shown on screen).
+It remembers the last choice. With one game installed it starts that one
+straight away. Menu → **Change game** goes back
 to the choice, and `--game ki1` or `--game ki2` skips it (for shortcuts).
 
 The first time you play each game, and each version of it, the program shows
@@ -195,6 +196,16 @@ together count as neither, up and down together as up, like fight sticks),
   switches, read at power-on, so they apply after Reset.
 - Volume, mute or pause in the background, auto-coin (UltraCombo 2),
   run-ahead and rewind.
+
+Button labels follow the last controller used; keyboard input switches menu
+prompts back to keyboard names. Xbox, PlayStation and Nintendo Switch layouts
+are detected through SDL. Before a controller is used, and for controllers
+SDL cannot identify, labels fall back to Xbox-style A/B/X/Y names. Controls →
+P1/P2 button labels overrides the detected family when an adapter hides it;
+Positions remains available for South/East/West/North names. This changes
+labels only, not the bindings. SDL's Nintendo letter-based and positional
+mappings are both respected, including the exchanged A/B and X/Y positions.
+The shared gamepad-binding page shows labels for the last pad used.
 
 The window's size and position are remembered between runs.
 
@@ -318,6 +329,15 @@ It checks valid round trips, truncated cores/pages/literals, invalid run lengths
 zero-progress tokens, incompatible headers and trailing data. A rejected file must
 leave live memory, devices and rewind history unchanged. The on-disk format is
 unchanged. These are file-format tests, not an original-game regression run.
+
+### Controller label tests
+
+`make test-controller-labels` runs controller-label, last-device prompt and configuration tests
+without game files. It uses SDL virtual controllers to check both Nintendo mapping
+modes, physical south-button activation and its displayed label, manual overrides,
+disconnection, axis noise and keyboard/controller prompt switching. Legacy action
+bindings must survive configuration load/save unchanged. Physical controller checks
+still need real hardware; virtual devices do not establish hardware compatibility.
 
 ### Windows
 

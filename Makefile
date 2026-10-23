@@ -5,7 +5,7 @@ LDLIBS  += $(shell pkg-config --libs sdl2) -lm -ldl
 
 SRC = src/main.c src/cpu.c src/disasm.c src/mem.c src/ide.c src/dcs.c src/adsp.c src/rec.c \
       src/frontend.c src/config.c src/osd.c src/png.c src/state.c src/video.c src/shaders.c src/icon.c src/adjust.c src/recomp.c src/rec_build.c src/training.c src/net.c src/netplay.c \
-      src/game.c src/game_ki1.c src/game_ki2.c src/picker.c
+      src/game.c src/game_ki1.c src/game_ki2.c src/picker.c src/controller_labels.c
 OBJ = $(SRC:src/%.c=build/%.o) build/rec_headers.o build/libchdr.o
 
 # libchdr (MAME CHD reader) and the decompressors it bundles, as one unit
@@ -61,14 +61,21 @@ build:
 	mkdir -p build
 
 # Synthetic state-file tests do not need SDL or game files.
-.PHONY: test test-state-files
-test: test-state-files
+.PHONY: test test-state-files test-controller-labels
+test: test-state-files test-controller-labels
 
 test-state-files: build/test_state_files
 	./build/test_state_files build/test-state-files.tmp
 
 build/test_state_files: tests/test_state_files.c src/state.c src/*.h | build
 	$(CC) -std=c11 -O2 -g -Wall -Wextra -Wno-sign-compare -Isrc src/state.c tests/test_state_files.c -o $@
+
+test-controller-labels: build/test_controller_labels
+	./build/test_controller_labels build/test-controller-labels.ini
+
+LABEL_TEST_SRC = src/controller_labels.c src/config.c src/game.c src/game_ki1.c src/game_ki2.c
+build/test_controller_labels: tests/test_controller_labels.c $(LABEL_TEST_SRC) src/*.h | build
+	$(CC) $(CFLAGS) -Isrc $(LABEL_TEST_SRC) tests/test_controller_labels.c -o $@ $(shell pkg-config --libs sdl2)
 
 # Windows build, cross-compiled with MinGW-w64 against the official SDL2
 # MinGW package (unpacked into deps/sdl2-mingw). Output: dist/windows/.

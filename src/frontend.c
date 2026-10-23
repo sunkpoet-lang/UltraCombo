@@ -5,6 +5,7 @@
 // once per frame (hw.p1, hw.p2, hw.volume), so the emulation stays a pure
 // function of those inputs (needed for netplay later).
 #include "config.h"
+#include "controller_labels.h"
 #include "ide.h"
 #include "machine.h"
 #include "mem.h"
@@ -196,6 +197,20 @@ static void screenshot(void)
 
 #define MAX_PADS 2
 static SDL_GameController *pads[MAX_PADS];
+static pad_prompt_t pad_prompt;
+
+static int prompt_override(void)
+{
+    for (int p = 0; p < MAX_PADS; p++)
+        if (pads[p] && SDL_JoystickInstanceID(SDL_GameControllerGetJoystick(pads[p])) == pad_prompt.last_pad)
+            return cfg.pad_family[p];
+    return PAD_FAMILY_AUTO;
+}
+
+static const char *pad_label(int button)
+{
+    return pad_button_name(SDL_GameControllerFromInstanceID(pad_prompt.last_pad), prompt_override(), button);
+}
 
 static void pad_added(int index)
 {
@@ -485,7 +500,7 @@ enum { M_RESUME, M_SAVE, M_LOAD, M_SLOT, M_GRAPHICS, M_CONTROLS, M_GAME, M_PRACT
 // Graphics
 enum { G_FULLSCREEN, G_MODE, G_WINDOW, G_SCALE, G_SHADER, G_PARAMS, G_PACING, G_PERF, G_BACK, G_COUNT };
 // Controls
-enum { C_P1, C_P2, C_PAD, C_HOTKEYS, C_PADHOT, C_SOCD, C_RUMBLE, C_DEADZONE, C_BACK, C_COUNT };
+enum { C_P1, C_P2, C_PAD, C_HOTKEYS, C_PADHOT, C_SOCD, C_RUMBLE, C_DEADZONE, C_P1LABELS, C_P2LABELS, C_BACK, C_COUNT };
 // Game & system
 enum { S_VOLUME, S_MUTE_BG, S_PAUSE_BG, S_VERSION, S_DIFFICULTY, S_FREEPLAY, S_BLOOD, S_BLOODCOL, S_FINISH, S_DEMO, S_AUTOCOIN, S_RUNAHEAD, S_REWIND, S_BACK, S_COUNT };
 // Practice
@@ -610,16 +625,6 @@ static int page_count(void)
     }
 }
 
-static const char *pad_label(int b)
-{
-    if (b == PAD_NONE) return "-";
-    if (b == PAD_LT) return "LT";
-    if (b == PAD_RT) return "RT";
-    static const char *const names[] = { "A", "B", "X", "Y", "Back", "Guide", "Start", "LS", "RS", "LB", "RB",
-                                         "Up", "Down", "Left", "Right" };
-    return b >= 0 && b < (int)(sizeof names / sizeof names[0]) ? names[b] : SDL_GameControllerGetStringForButton((SDL_GameControllerButton)b);
-}
-
 static void draw_menu(uint32_t *out)
 {
     if (!menu_open) return;
@@ -627,7 +632,9 @@ static void draw_menu(uint32_t *out)
     const char *items[96];
     int n = page_count();
     if (n > 96) n = 96;
-    const char *title = game.product, *foot = "ENTER/A SELECT   ESC/B BACK";   // the font draws capitals
+    char footer[96];
+    pad_prompt_footer(&pad_prompt, prompt_override(), "SELECT", "BACK", footer, sizeof footer);
+    const char *title = game.product, *foot = footer;   // the font draws capitals
     static const char *const onoff[2] = { "Off", "On" };
     char lbl[80];
 
@@ -645,7 +652,7 @@ static void draw_menu(uint32_t *out)
         snprintf(b[M_RESET], 72, "Reset game");
         snprintf(b[M_CHANGE], 72, "Change game...");
         snprintf(b[M_QUIT], 72, "Quit");
-        foot = "ENTER/A SELECT   ESC/B CLOSE";
+        pad_prompt_footer(&pad_prompt, prompt_override(), "SELECT", "CLOSE", footer, sizeof footer);
         break;
     case PG_GRAPHICS: {
         static const char *const scale_names[] = { "Fit 4:3", "Integer", "Stretch" };
@@ -664,7 +671,7 @@ static void draw_menu(uint32_t *out)
                  cfg.pacing == PACING_AUTO ? (vsync ? ": vsync" : ": audio") : "");
         snprintf(b[G_PERF], 72, "Performance overlay\t%s", onoff[cfg.perf_overlay]);
         snprintf(b[G_BACK], 72, "Back");
-        foot = "LEFT/RIGHT CHANGE   ESC/B BACK";
+        pad_prompt_adjust_footer(&pad_prompt, prompt_override(), footer, sizeof footer);
         break;
     }
     case PG_PARAMS:
@@ -687,6 +694,10 @@ static void draw_menu(uint32_t *out)
         snprintf(b[C_SOCD], 72, "Left+right = neutral\t%s", onoff[cfg.socd]);
         snprintf(b[C_RUMBLE], 72, "Rumble when hit\t%s", onoff[cfg.rumble]);
         snprintf(b[C_DEADZONE], 72, "Stick deadzone\t< %d%% >", cfg.pad_deadzone * 100 / 32767);
+        for (int p = 0; p < 2; p++)
+            snprintf(b[p ? C_P2LABELS : C_P1LABELS], 72, "P%d button labels\t< %s%s%s >", p + 1,
+                     pad_family_name(cfg.pad_family[p]), cfg.pad_family[p] == PAD_FAMILY_AUTO ? ": " : "",
+                     cfg.pad_family[p] == PAD_FAMILY_AUTO ? pad_family_name(pad_label_family(pads[p], PAD_FAMILY_AUTO)) : "");
         snprintf(b[C_BACK], 72, "Back");
         break;
     case PG_BIND: {
@@ -703,7 +714,8 @@ static void draw_menu(uint32_t *out)
             snprintf(b[i], 72, "%s\t%s", name, v);
         }
         snprintf(b[n - 1], 72, "Back");
-        foot = capturing >= 0 ? "ESC CANCELS   BACKSPACE CLEARS" : "ENTER TO CHANGE";
+        if (capturing >= 0) foot = "ESC CANCELS   BACKSPACE CLEARS";
+        else pad_prompt_footer(&pad_prompt, prompt_override(), "CHANGE", "BACK", footer, sizeof footer);
         break;
     }
     case PG_GAME: {
@@ -929,6 +941,9 @@ static void menu_change(int dir)
             cfg.pad_deadzone = pct * 32767 / 100;
             break;
         }
+        case C_P1LABELS: case C_P2LABELS:
+            cycle(&cfg.pad_family[menu_sel == C_P1LABELS ? 0 : 1], PAD_FAMILY_COUNT, d);
+            break;
         case C_BACK: if (!dir) go(PG_MAIN, M_CONTROLS); return;
         }
         break;
@@ -1104,6 +1119,7 @@ static bool handle_events(void)
 {
     SDL_Event ev;
     while (SDL_PollEvent(&ev)) {
+        pad_prompt_event(&pad_prompt, &ev);
         switch (ev.type) {
         case SDL_QUIT: return false;
         case SDL_CONTROLLERDEVICEADDED: pad_added(ev.cdevice.which); break;
@@ -1329,6 +1345,7 @@ static void prepare_game_code(void)
 
 int frontend_main(void)
 {
+    pad_prompt_init(&pad_prompt);
     if (SDL_Init(SDL_INIT_VIDEO | SDL_INIT_AUDIO | SDL_INIT_GAMECONTROLLER) != 0) {
         fprintf(stderr, "SDL: %s\n", SDL_GetError());
         return 1;

@@ -1,5 +1,6 @@
 // The game picker (picker.h): a small window with a tile per game.
 #include "picker.h"
+#include "controller_labels.h"
 #include "icon.h"
 #include "osd.h"
 #include <SDL2/SDL.h>
@@ -37,7 +38,7 @@ static void text(int x, int y, const char *s, uint32_t rgb)   // centred on x, i
     osd_text(ov, x / 2 - (int)strlen(s) * 3, y / 2, s, rgb);
 }
 
-static void draw(const game_t *const *games, const bool *installed, int sel)
+static void draw(const game_t *const *games, const bool *installed, int sel, const pad_prompt_t *prompt)
 {
     for (int y = 0; y < H; y++)                          // dark red-to-black backdrop
         for (int x = 0; x < W; x++) {
@@ -76,7 +77,10 @@ static void draw(const game_t *const *games, const bool *installed, int sel)
         for (char *c = line; *c; c++) if (*c >= 'a' && *c <= 'z') *c -= 32;
         text(cx, y0 + ICON + 64, line, installed[i] ? 0x60c060 : 0xc05050);
     }
-    text(320, 400, "LEFT/RIGHT CHOOSE   ENTER/A START   ESC QUIT", 0x808080);
+    char buttons[64], footer[96];
+    pad_prompt_footer(prompt, PAD_FAMILY_AUTO, "START", "QUIT", buttons, sizeof buttons);
+    snprintf(footer, sizeof footer, "LEFT/RIGHT CHOOSE   %s", buttons);
+    text(320, 400, footer, 0x808080);
     if (!installed[0] || !installed[1])
         text(320, 424, "A GAME'S FILES GO IN THE RUN FOLDER (SEE README)", 0x606060);
     for (int y = 0; y < H; y++)                          // the text, doubled
@@ -108,6 +112,8 @@ const game_t *picker_choose(const game_t *const *games, const bool *installed, i
 
     SDL_GameController *pads[8];
     int npads = 0;
+    pad_prompt_t prompt;
+    pad_prompt_init(&prompt);
     int sel = initial == 1 ? 1 : 0;
     if (!installed[sel]) sel = !sel;
     const game_t *chosen = NULL;
@@ -117,6 +123,7 @@ const game_t *picker_choose(const game_t *const *games, const bool *installed, i
         int move = 0;
         bool go = false;
         while (SDL_PollEvent(&ev)) {
+            pad_prompt_event(&prompt, &ev);
             switch (ev.type) {
             case SDL_QUIT: done = true; break;
             case SDL_CONTROLLERDEVICEADDED:
@@ -165,7 +172,7 @@ const game_t *picker_choose(const game_t *const *games, const bool *installed, i
         }
         if (move && installed[0] && installed[1]) sel = !sel;     // two tiles: either way swaps
         if (go && installed[sel]) { chosen = games[sel]; done = true; }
-        draw(games, installed, sel);
+        draw(games, installed, sel, &prompt);
         SDL_UpdateTexture(tex, NULL, canvas, W * 4);
         SDL_RenderClear(r);
         SDL_RenderCopy(r, tex, NULL, NULL);
