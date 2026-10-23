@@ -2,6 +2,7 @@
 // checks that the game's code in RAM still matches the recompiled image.
 #include "rec.h"
 #include "game.h"
+#include "adsp.h"
 #include <stdio.h>
 #include <stdlib.h>
 
@@ -22,6 +23,7 @@ const rec_host_t *rec_host_info(void)
         REC_ABI_VERSION, sizeof(cpu_t), sizeof(tlbc_t), &cpu, ram, ram_dirty, tlbc,
         &rec_code_lo, &rec_code_size, &irq_dirty, &cpu_exc, &rec_deadline,
         rec_load, rec_store, rec_op,
+        adsp_core(), (uint32_t)adsp_core_size(), adsp_pm_changed,
     };
     return &host;
 }
@@ -47,13 +49,15 @@ static bool use(const rec_module_t *m)
     rec_enabled = true;
     fprintf(stderr, "rec: %u functions, %u entry points, %u KB of code\n",
             m->nfuncs, m->nlabels, rec_image_words * 4 / 1024);
+    bool dsp = m->ndsp && m->sizeof_adsp == adsp_core_size();
+    adsp_use_code(dsp ? m->dsp : NULL, dsp ? m->ndsp : 0);
     return true;
 }
 
 void rec_init(void) { use(rec_module_init(rec_host_info())); }
 
 // The module itself stays loaded: little memory, and it is never called again.
-void rec_unload(void) { rec_enabled = false; rec_mod = NULL; }
+void rec_unload(void) { rec_enabled = false; rec_mod = NULL; adsp_use_code(NULL, 0); }
 
 bool rec_use_module(rec_module_init_fn init) { return init && use(init(rec_host_info())); }
 

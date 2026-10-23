@@ -3,7 +3,7 @@ CFLAGS  ?= -O2 -g -Wall -Wextra -Wno-unused-parameter
 CFLAGS  += $(shell pkg-config --cflags sdl2)
 LDLIBS  += $(shell pkg-config --libs sdl2) -lm -ldl
 
-SRC = src/main.c src/cpu.c src/disasm.c src/mem.c src/ide.c src/dcs.c src/adsp.c src/rec.c \
+SRC = src/main.c src/cpu.c src/disasm.c src/mem.c src/ide.c src/dcs.c src/adsp.c src/adsprec.c src/rec.c \
       src/frontend.c src/config.c src/osd.c src/png.c src/state.c src/video.c src/shaders.c src/icon.c src/adjust.c src/recomp.c src/rec_build.c src/training.c src/net.c src/netplay.c \
       src/game.c src/game_ki1.c src/game_ki2.c src/picker.c src/controller_labels.c
 OBJ = $(SRC:src/%.c=build/%.o) build/rec_headers.o build/libchdr.o
@@ -36,8 +36,8 @@ build/%.o: src/%.c src/*.h | build
 	$(CC) $(CFLAGS) -c -o $@ $<
 
 # the headers translated code needs, embedded so the program can build it at run time
-build/rec_headers.c: src/rec_abi.h src/rec_gen.h tools/embed.py | build
-	python3 tools/embed.py $@ rec_abi_h=src/rec_abi.h rec_gen_h=src/rec_gen.h
+build/rec_headers.c: src/rec_abi.h src/rec_gen.h src/adsp_core.h tools/embed.py | build
+	python3 tools/embed.py $@ rec_abi_h=src/rec_abi.h rec_gen_h=src/rec_gen.h adsp_core_h=src/adsp_core.h
 
 build/rec_headers.o: build/rec_headers.c
 	$(CC) $(CFLAGS) -c -o $@ $<

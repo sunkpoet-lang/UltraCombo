@@ -31,7 +31,7 @@ typedef __SIZE_TYPE__ size_t;
 #endif
 
 // Bumped whenever anything below (or what modules expect of the program) changes.
-#define REC_ABI_VERSION 2
+#define REC_ABI_VERSION 3
 
 #define RAM0_SIZE 0x80000u     // phys 0x00000000: 512 KB (holds the framebuffers)
 #define RAM2_SIZE 0x800000u    // phys 0x08000000: 8 MB
@@ -98,6 +98,20 @@ typedef struct {
     uint32_t lo, hi;    // MIPS address range the C code was generated from
 } rec_func_t;
 
+// Translated sound DSP code (adsprec.c): a function per piece of a program
+// image. Entered with the DSP's pc at one of its words, it runs until the
+// cycles are used up or the pc leaves what it can run, and returns the
+// cycles left. ok[k]: the word at base + k still holds image[k]. *irq_done
+// is set when it stops just after taking an interrupt, before running the
+// instruction there.
+typedef int (*rec_dsp_fn_t)(int cycles, const uint8_t *ok, int *irq_done);
+
+typedef struct rec_dsp_image_s {
+    rec_dsp_fn_t fn;
+    uint16_t base, words;               // program memory address and length
+    const uint32_t *image;              // the 24-bit words it was translated from
+} rec_dsp_image_t;
+
 // What the program gives a module: where its state lives.
 typedef struct {
     uint32_t abi, sizeof_cpu, sizeof_tlbc;
@@ -110,6 +124,9 @@ typedef struct {
     uint64_t (*load)(uint32_t va, int size, uint32_t pc, bool delay);
     void     (*store)(uint32_t va, uint64_t v, int size, uint32_t pc, bool delay);
     bool     (*op)(uint32_t op, uint32_t pc, bool delay);
+    void    *adsp;                      // the sound DSP's adsp_t (adsp_core.h)
+    uint32_t sizeof_adsp;
+    void     (*dsp_pm_written)(uint16_t addr);   // the DSP wrote its internal program RAM
 } rec_host_t;
 
 // What a module gives back.
@@ -122,6 +139,8 @@ typedef struct {
     const uint32_t *image;              // the game code it was translated from
     uint64_t image_hash;
     char game[8];                       // which game's code ("ki1", "ki2")
+    const rec_dsp_image_t *dsp;         // translated sound code (may be none)
+    uint32_t ndsp, sizeof_adsp;
 } rec_module_t;
 
 // Every module (and the program, for linked-in code) defines this.

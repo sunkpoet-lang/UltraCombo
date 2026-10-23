@@ -20,6 +20,11 @@ typedef struct {
     game_version_t versions[4]; // [0] is the default; label NULL ends the list
     const char *sound_roms[8];  // U10-U13, U33-U36
     uint32_t sound_crc[8];
+    // Sound DSP program images to translate (adsprec.c): where U10 holds them
+    // (byte offset, 4 bytes per word), the program address they run at and
+    // their length; boot: a boot page, its length in its header. Found by
+    // logging what the DSP runs; anything else it runs is interpreted.
+    struct { uint32_t rom; uint16_t pm, words; bool boot; } sound_code[6];   // words 0, !boot: end
     const char *set;            // MAME's name for the game (its CHD sits in a folder of that name)
     const char *disk;           // raw disk image file name
     const char *chd;            // or the MAME CHD itself

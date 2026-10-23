@@ -5,18 +5,7 @@
 #include <stdbool.h>
 #include <stddef.h>
 
-enum { ADSP_IRQ0 = 0, ADSP_IRQ1 = 1, ADSP_IRQ2 = 2, ADSP_TIMER = 5 };
-
-typedef struct {
-    // board hooks for external memory
-    uint32_t (*pm_read)(uint16_t addr);            // 24-bit program word
-    void     (*pm_write)(uint16_t addr, uint32_t v);
-    uint16_t (*dm_read)(uint16_t addr);
-    void     (*dm_write)(uint16_t addr, uint16_t v);
-    void     (*sample_out)(int16_t s);             // one SPORT1 sample
-    void     (*sample_rate)(double hz);            // SPORT1 rate changed
-    void     (*sysctl_reboot)(void);               // SYSCONTROL bit 9 soft reboot
-} adsp_hooks_t;
+#include "adsp_core.h"     // adsp_hooks_t, interrupt lines
 
 void adsp_init(const adsp_hooks_t *hooks);
 void adsp_reset(void);
@@ -26,3 +15,11 @@ void adsp_pulse_irq(int line);
 uint32_t *adsp_internal_pm(void);   // 1K x 24-bit, filled by the boot loader
 uint16_t adsp_pc(void);
 size_t adsp_state(uint8_t *buf, bool load);    // NULL buf: size only
+
+// Translated code (rec_abi.h's rec_dsp_image_t), from the game's module; NULL to stop using it.
+struct rec_dsp_image_s;
+void adsp_use_code(const struct rec_dsp_image_s *img, uint32_t n);
+void adsp_pm_changed(uint16_t addr);   // the board changed the program word at addr
+void adsp_code_reload(void);           // program memory was reloaded (boot, state load)
+void *adsp_core(void);                 // the adsp_t, for translated code
+size_t adsp_core_size(void);

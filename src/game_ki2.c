@@ -13,6 +13,10 @@ const game_t game_ki2 = {
                     "ki2_l1.u33", "ki2_l1.u34", "ki2_l1.u35", "ki2_l1.u36" },
     .sound_crc = { 0xfdf6ed51, 0xf9e70024, 0x2994c199, 0x3fe6327b,
                    0x6f4dcdcf, 0x5db48206, 0x7245ce69, 0x8920acbb },
+    // the boot loader page, the sound OS it reboots into (bank 1), and the
+    // two programs the OS copies into external RAM
+    .sound_code = { { 0x0000, 0x0000, 0, true }, { 0x1000, 0x0000, 0, true },
+                    { 0x0800, 0x0800, 0x300 }, { 0x2000, 0x0800, 0x400 } },
     .set = "kinst2",
     .disk = "kinst2.raw",
     .chd = "kinst2.chd",

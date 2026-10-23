@@ -33,7 +33,8 @@ The game's ROMs, disk image and code are copyrighted. This repo is public.
 | CPU: MIPS R4600 interpreter, TLB, exceptions | `cpu.c/h`, `disasm.c` |
 | Memory map and I/O | `mem.c/h`, `machine.h` |
 | IDE disk: raw image or MAME CHD (read-only, via libchdr), settings sectors in memory and in `saves/<boot ROM>.settings` | `ide.c/h`, `third_party/libchdr/` |
-| Sound: DCS board, ADSP-2105 core | `dcs.c`, `adsp.c/h`, `sound.h` |
+| Sound: DCS board, ADSP-2105 core | `dcs.c`, `adsp.c/h` (run loop, interpreter), `adsp_core.h` (state and instruction semantics, shared with translated sound code), `sound.h` |
+| The sound translator (ADSP-2105 to C), used at run time | `adsprec.c/h`; images to translate: `sound_code` in the profile |
 | Translated code: dispatcher, maps | `rec.c/h` |
 | The translator (MIPS to C), used at run time | `recomp.c/h` (`tools/recomp.py` is the original) |
 | Contract between program and translated code | `rec_abi.h`, `rec_gen.h` |
@@ -97,6 +98,17 @@ MAME's CRC32s and CHD SHA1, and the files are checked at startup.
 - Compiler order at first launch: bundled Zig → system cc/gcc/clang → TinyCC
   (about half the speed) → interpreter. All four must give the regression
   hash.
+- `adsp_core.h` is compiled into the module too (embedded like the other
+  two): same rules. The sound DSP's translated code must stay bit-identical
+  to the interpreter, so it may stop at any instruction: every instruction
+  does what one pass of `adsp_run`'s loop does, with the same functions.
+  Keep instruction semantics in `adsp_core.h` only, and change the
+  `ADSP_GROUPS` table rather than decoding in the translator. The `adsp_t`
+  layout is in save states: don't add fields to it.
+- Translated sound code runs only where program memory still holds the words
+  it came from (`code_ok` in `adsp.c`). The board must report every program
+  word it changes (`adsp_pm_changed`, `adsp_code_reload`), including data
+  writes that alias external program RAM.
 
 ## Product rules
 
@@ -134,6 +146,8 @@ takes interrupts at block boundaries. What must match is every build of the
 same translated code (any compiler, linked-in or built at first launch).
 Useful environment variables:
 - `KI2_NOREC=1`: interpreter only, which gives a different but also fixed hash.
+- `KI2_NOADSP=1`: sound DSP on the interpreter, game code still translated
+  (same hash either way).
 - `KI2_LOAD_MODULE=path.so`: use a given module.
 - `KI2_BUILD=1 KI2_BUILD_WITH=zig|cc|tcc`: build the module now, headless,
   with that compiler.
@@ -168,7 +182,7 @@ missed. Run a copy of the program from a scratch folder so it gets its own
 Headless switches: see `usage()` in `main.c` (`--headless`, `--script`,
 `--save-at`, `--load`, `--rewind-test`, `--runahead`, `--net-host`/`--net-join`/`--net-sim`).
 Debug environment variables, all read with `getenv` in `src/` (grep them
-for details): `KI2_LOG_EXC`, `KI2_LOG_IDE` and `KI2_LOG_SOUND` (logging),
+for details): `KI2_LOG_EXC`, `KI2_LOG_IDE` and `KI2_LOG_SOUND` (logging; also the share of DSP cycles that ran translated, at exit),
 `KI2_DUMP_AT` (RAM snapshot at a frame), `KI2_WAV` (record audio, output is
 game-derived), `KI2_CONSOLE` (Windows: log to the console instead of
 `ki2.log`). `KI2_DUMP_AT` also takes a list (`F1,F2,...` → `ram2_<F>.bin`),

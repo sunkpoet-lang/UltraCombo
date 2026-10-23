@@ -500,7 +500,11 @@ bool recomp_generate(const uint8_t *snap0, const uint8_t *snap2, const char *out
               "#ifdef REC_MODULE\n"
               "const rec_host_t *rec_host_;\ncpu_t *rec_cpu_;\nuint8_t *rec_ram_, *rec_dirty_;\n"
               "#endif\n\n"
-              "static const rec_module_t module = {\n"
+              "// the sound DSP's code (rec_dsp.c)\n"
+              "extern const rec_dsp_image_t rec_dsp_images_[];\n"
+              "extern const uint32_t rec_dsp_nimages_, rec_dsp_sizeof_adsp_;\n"
+              "void rec_dsp_bind_(const rec_host_t *h);\n\n"
+              "static rec_module_t module = {\n"
               "    REC_ABI_VERSION, sizeof(cpu_t), sizeof(tlbc_t), funcs, labels, %d, %d,\n"
               "    0x%08xu, %uu, image, 0x%016llxull, \"%s\",\n"
               "};\n\n"
@@ -508,6 +512,10 @@ bool recomp_generate(const uint8_t *snap0, const uint8_t *snap2, const char *out
               "    if (host->abi != REC_ABI_VERSION || host->sizeof_cpu != sizeof(cpu_t) || host->sizeof_tlbc != sizeof(tlbc_t))\n"
               "        return 0;\n"
               "    rec_bind_(host);\n"
+              "    rec_dsp_bind_(host);\n"
+              "    module.dsp = rec_dsp_images_;\n"
+              "    module.ndsp = rec_dsp_nimages_;\n"
+              "    module.sizeof_adsp = rec_dsp_sizeof_adsp_;\n"
               "    return &module;\n}\n",
         starts.n, nlabels, BASE, nwords, (unsigned long long)h, game.id);
     if (ok) ok = write_text(outdir, "rec_tab.c", &tab, err, errlen);

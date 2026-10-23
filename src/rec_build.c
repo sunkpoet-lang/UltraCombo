@@ -6,6 +6,8 @@
 #include "mem.h"
 #include "rec.h"
 #include "recomp.h"
+#include "adsprec.h"
+#include "sound.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -29,11 +31,11 @@
 extern char **environ;
 #endif
 
-#define RECOMP_VERSION 2           // bump when recomp.c's output changes
+#define RECOMP_VERSION 3           // bump when recomp.c's or adsprec.c's output changes
 #define SNAPSHOT_FRAMES game.snapshot_frames   // the game has loaded all of its code by then
 
-// rec_abi.h and rec_gen.h, embedded at build time (build/rec_headers.c)
-extern const char rec_abi_h[], rec_gen_h[];
+// rec_abi.h, rec_gen.h and adsp_core.h, embedded at build time (build/rec_headers.c)
+extern const char rec_abi_h[], rec_gen_h[], adsp_core_h[];
 
 static void *module_handle;         // kept loaded for the rest of the run
 
@@ -112,13 +114,19 @@ static uint64_t fnv(uint64_t h, const void *p, size_t n)
 }
 
 // Everything the translated code depends on: the boot ROM, the disk's code
-// (sampled), the generator and the module interface.
+// (sampled), the sound DSP's code, the generators and the module interface.
 static uint64_t build_key(void)
 {
     uint64_t h = fnv(0xcbf29ce484222325ull, rom, ROM_SIZE);
     uint64_t disk = ide_image_id();
     int v[2] = { RECOMP_VERSION, REC_ABI_VERSION };
     h = fnv(h, &disk, sizeof disk);
+    adsprec_image_t img[6];
+    int n = sound_code_images(img, 6);
+    for (int i = 0; i < n; i++) {
+        h = fnv(h, &img[i].base, sizeof img[i].base);
+        h = fnv(h, img[i].image, img[i].words * sizeof *img[i].image);
+    }
     return fnv(h, v, sizeof v);
 }
 
@@ -287,13 +295,25 @@ static void compile_tick(int done, int total)
 
 static int nsources;
 
+// The generated files: rec_000.c ... (nsources of them), then rec_tab.c,
+// rec_dsp.c and the sound images rec_dsp_0.c ...
+#define ALL_SOURCES (nsources + 2 + ADSPREC_FILES)
+
+static void source_name(char *out, size_t n, const char *src, int i)
+{
+    if (i < nsources) snprintf(out, n, "%s/rec_%03d.c", src, i);
+    else if (i == nsources) snprintf(out, n, "%s/rec_tab.c", src);
+    else if (i == nsources + 1) snprintf(out, n, "%s/rec_dsp.c", src);
+    else snprintf(out, n, "%s/rec_dsp_%d.c", src, i - nsources - 2);
+}
+
 // zig = true: "zig cc" (bundled), else a gcc/clang driver.
 static bool build_with(const char *cc, bool zig, const char *src, const char *module, const char *log)
 {
     cmd_t jobs[80];
     int n = 0;
     char obj[2200], file[2200];
-    for (int i = 0; i <= nsources; i++) {               // rec_000.c ... and rec_tab.c
+    for (int i = 0; i < ALL_SOURCES; i++) {
         cmd_t *c = &jobs[n++];
         c->argc = 0;
         cmd_add(c, cc);
@@ -311,8 +331,7 @@ static bool build_with(const char *cc, bool zig, const char *src, const char *mo
         cmd_add(c, "-I");
         cmd_add(c, src);
         cmd_add(c, "-c");
-        if (i < nsources) snprintf(file, sizeof file, "%s/rec_%03d.c", src, i);
-        else snprintf(file, sizeof file, "%s/rec_tab.c", src);
+        source_name(file, sizeof file, src, i);
         cmd_add(c, file);
         cmd_add(c, "-o");
         snprintf(obj, sizeof obj, "%s.o", file);
@@ -335,9 +354,9 @@ static bool build_with(const char *cc, bool zig, const char *src, const char *mo
 #endif
     cmd_add(&link, "-o");
     cmd_add(&link, module);
-    for (int i = 0; i <= nsources; i++) {
-        if (i < nsources) snprintf(obj, sizeof obj, "%s/rec_%03d.c.o", src, i);
-        else snprintf(obj, sizeof obj, "%s/rec_tab.c.o", src);
+    for (int i = 0; i < ALL_SOURCES; i++) {
+        source_name(file, sizeof file, src, i);
+        snprintf(obj, sizeof obj, "%s.o", file);
         cmd_add(&link, obj);
     }
     if (progress_cb) progress_cb("Linking", 0.92);
@@ -412,11 +431,10 @@ static bool load_with_tcc(const char *src, char *err, size_t errlen)
     snprintf(file, sizeof file, "%s/chkstk.S", libdir);
     if (t.add_file(s, file) < 0) { snprintf(err, errlen, "TinyCC could not assemble %s", file); return false; }
 #endif
-    for (int i = 0; i <= nsources; i++) {
-        if (i < nsources) snprintf(file, sizeof file, "%s/rec_%03d.c", src, i);
-        else snprintf(file, sizeof file, "%s/rec_tab.c", src);
+    for (int i = 0; i < ALL_SOURCES; i++) {
+        source_name(file, sizeof file, src, i);
         if (t.add_file(s, file) < 0) { snprintf(err, errlen, "TinyCC could not compile %s", file); return false; }
-        if (progress_cb) progress_cb("Compiling the game code (TinyCC)", 0.35 + 0.55 * (i + 1) / (nsources + 1));
+        if (progress_cb) progress_cb("Compiling the game code (TinyCC)", 0.35 + 0.55 * (i + 1) / ALL_SOURCES);
     }
     if (t.relocate(s) < 0) { snprintf(err, errlen, "TinyCC could not link the game code"); return false; }
     rec_module_init_fn init = (rec_module_init_fn)t.get_symbol(s, REC_MODULE_INIT);
@@ -532,11 +550,15 @@ bool rec_build(rec_progress_fn progress, char *msg, size_t msglen)
     // 2. translate it
     if (progress) progress("Translating the game's code", 0.3);
     recomp_info_t info;
-    char abi[2300], gen[2300];
+    char abi[2300], gen[2300], core[2300];
     snprintf(abi, sizeof abi, "%s/rec_abi.h", src);
     snprintf(gen, sizeof gen, "%s/rec_gen.h", src);
+    snprintf(core, sizeof core, "%s/adsp_core.h", src);
+    adsprec_image_t img[6];
+    int nimg = sound_code_images(img, 6);
     bool ok = recomp_generate(snap, snap + RAM0_SIZE, src, &info, err, sizeof err) &&
-              write_file(abi, rec_abi_h) && write_file(gen, rec_gen_h);
+              adsprec_generate(img, nimg, src, err, sizeof err) &&
+              write_file(abi, rec_abi_h) && write_file(gen, rec_gen_h) && write_file(core, adsp_core_h);
     free(snap);
     if (!ok) { snprintf(msg, msglen, "translation failed: %s", err); return false; }
     nsources = info.files;

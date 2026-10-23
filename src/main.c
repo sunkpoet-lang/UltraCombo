@@ -581,6 +581,26 @@ void machine_restart_to_picker(void)
     fprintf(stderr, "could not restart: %s\n", strerror(errno));
 }
 
+// --recomp RAM0 RAM2 OUTDIR: translate a snapshot, and the sound DSP's code
+// from the sound ROMs, to C (what `make recomp` uses).
+static char **recomp_args;
+
+static int recomp_snapshot(const char *snap0, const char *snap2, const char *outdir)
+{
+    static uint8_t r0b[RAM0_SIZE], r2b[RAM2_SIZE];
+    FILE *a = fopen(snap0, "rb"), *b = fopen(snap2, "rb");
+    bool ok = a && b && fread(r0b, 1, RAM0_SIZE, a) == RAM0_SIZE && fread(r2b, 1, RAM2_SIZE, b) == RAM2_SIZE;
+    if (a) fclose(a);
+    if (b) fclose(b);
+    char err[512] = "cannot read the snapshot";
+    recomp_info_t info;
+    adsprec_image_t img[6];
+    int nimg = sound_code_images(img, 6);
+    if (ok) ok = recomp_generate(r0b, r2b, outdir, &info, err, sizeof err) && adsprec_generate(img, nimg, outdir, err, sizeof err);
+    if (!ok) fprintf(stderr, "recomp: %s\n", err);
+    return ok ? 0 : 1;
+}
+
 int main(int argc, char **argv)
 {
     main_argc = argc;
@@ -642,19 +662,7 @@ int main(int argc, char **argv)
         else if (!strcmp(argv[i], "--rewind-test") && i + 1 < argc) rewind_test = atoi(argv[++i]);
         else if (!strcmp(argv[i], "--runahead") && i + 1 < argc) runahead = atoi(argv[++i]);
         else if (!strcmp(argv[i], "--host")) { extern const char *opt_net_host; opt_net_host = (i + 1 < argc && argv[i + 1][0] != '-') ? argv[++i] : ""; }
-        else if (!strcmp(argv[i], "--recomp") && i + 3 < argc) {
-            // RAM0 RAM2 OUTDIR: translate a snapshot to C (what `make recomp` uses)
-            static uint8_t r0b[RAM0_SIZE], r2b[RAM2_SIZE];
-            FILE *a = fopen(argv[i + 1], "rb"), *b = fopen(argv[i + 2], "rb");
-            bool ok = a && b && fread(r0b, 1, RAM0_SIZE, a) == RAM0_SIZE && fread(r2b, 1, RAM2_SIZE, b) == RAM2_SIZE;
-            if (a) fclose(a);
-            if (b) fclose(b);
-            char err[512] = "cannot read the snapshot";
-            recomp_info_t info;
-            if (ok) ok = recomp_generate(r0b, r2b, argv[i + 3], &info, err, sizeof err);
-            if (!ok) fprintf(stderr, "recomp: %s\n", err);
-            return ok ? 0 : 1;
-        }
+        else if (!strcmp(argv[i], "--recomp") && i + 3 < argc) { recomp_args = &argv[i + 1]; i += 3; }
         else if (!strcmp(argv[i], "--test-shaders")) { extern bool opt_test_shaders; opt_test_shaders = true; }
         else if (!strcmp(argv[i], "--join") && i + 1 < argc) { extern const char *opt_net_join; opt_net_join = argv[++i]; }
         else if (!strcmp(argv[i], "--net-host") && i + 1 < argc) net_host = argv[++i];
@@ -736,6 +744,7 @@ int main(int argc, char **argv)
     }
     if (!sound_init(sound_dir))
         report(false, "Some sound ROMs were not found in %s, so the game will run without sound.\n\n%s", sound_dir, files_help());
+    if (recomp_args) return recomp_snapshot(recomp_args[0], recomp_args[1], recomp_args[2]);
     check_files(rom_path, sound_dir);
     hw.dsw = getenv("KI2_DSW") ? (uint32_t)strtoul(getenv("KI2_DSW"), 0, 16) : config_dsw();
     cpu_reset();

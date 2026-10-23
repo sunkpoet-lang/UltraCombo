@@ -109,7 +109,8 @@ to the choice, and `--game ki1` or `--game ki2` skips it (for shortcuts).
 The first time you play each game, and each version of it, the program shows
 "PREPARING THE GAME FOR THIS PC": it boots your game files on its
 interpreter until the game has loaded its code, snapshots that code,
-translates it to C and compiles it into a native module. That takes about a
+translates it to C, along with the sound board's DSP program from the sound
+ROMs, and compiles it into a native module. That takes about a
 minute, once; the module is cached in `cache/` (a new one is made if the
 game files change). The compiler used is the first that works of:
 
