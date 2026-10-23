@@ -5,7 +5,7 @@ LDLIBS  += $(shell pkg-config --libs sdl2) -lm -ldl
 
 SRC = src/main.c src/cpu.c src/disasm.c src/mem.c src/ide.c src/dcs.c src/adsp.c src/adsprec.c src/rec.c \
       src/frontend.c src/config.c src/osd.c src/png.c src/state.c src/video.c src/shaders.c src/icon.c src/adjust.c src/recomp.c src/rec_build.c src/training.c src/net.c src/netplay.c \
-      src/game.c src/game_ki1.c src/game_ki2.c src/picker.c src/controller_labels.c
+      src/game.c src/game_ki1.c src/game_ki2.c src/picker.c src/controller_labels.c src/launch.c
 OBJ = $(SRC:src/%.c=build/%.o) build/rec_headers.o build/libchdr.o
 
 # libchdr (MAME CHD reader) and the decompressors it bundles, as one unit

@@ -15,6 +15,7 @@
 #include "state.h"
 #include "netplay.h"
 #include "training.h"
+#include "launch.h"
 #include "icon.h"
 #include "adjust.h"
 #include "rec_build.h"
@@ -194,8 +195,8 @@ static void present(const char *status)
     osd_clear(ov);
     draw_inputs(ov);
     draw_perf(ov);
-    osd_draw(ov, status);
     draw_menu(ov);
+    osd_draw(ov, status);           // after the menu: messages show over it too
     video_present(px, ov, cfg.filter, cfg.scale_mode);
 }
 
@@ -554,9 +555,10 @@ static const char *const hotkey_labels[NHOTKEYS] = {
     "Menu", "Pause", "Frame advance", "Fast-forward (hold)", "Rewind (hold)", "Save state", "Load state",
     "Next state slot", "Fullscreen", "Screenshot", "Volume up", "Volume down", "Mute", "Test (operator)",
     "Service credit", "Cabinet volume up", "Cabinet volume down", "Input display", "Training mode",
-    "Record dummy", "Play dummy", "Performance overlay",
+    "Record dummy", "Play dummy", "Performance overlay", "Quit",
 };
-static const char *const pad_hotkey_labels[3] = { "Menu", "Rewind (hold)", "Fast-forward (hold)" };
+static const char *const pad_hotkey_labels[4] = { "Menu", "Rewind (hold)", "Fast-forward (hold)", "Quit" };
+static int *pad_hotkey(int i) { return i == 0 ? &cfg.pad_menu : i == 1 ? &cfg.pad_rewind : i == 2 ? &cfg.pad_fast : &cfg.pad_quit; }
 
 /* --- shader list --- */
 
@@ -624,7 +626,7 @@ static int display_modes(SDL_DisplayMode *out, int max)
 // Rows that don't apply to this game.
 static bool row_hidden(int row)
 {
-    if (menu_page == PG_MAIN) return row == M_CHANGE && !machine_both_installed();
+    if (menu_page == PG_MAIN) return row == M_CHANGE && (!machine_both_installed() || launch_active());   // a launcher picks the game
     if (menu_page != PG_GAME) return false;
     if (row == S_AUTOCOIN) return !game.credits;
     if (row == S_BLOODCOL) return !game.has_blood_colour;
@@ -638,7 +640,7 @@ static int page_count(void)
     case PG_GRAPHICS: return G_COUNT;
     case PG_PARAMS: return shader_param_count() + 2;
     case PG_CONTROLS: return C_COUNT;
-    case PG_BIND: return (bind_set == 3 ? NHOTKEYS : bind_set == 4 ? 3 : NBUTTONS) + 1;
+    case PG_BIND: return (bind_set == 3 ? NHOTKEYS : bind_set == 4 ? 4 : NBUTTONS) + 1;
     case PG_GAME: return S_COUNT;
     case PG_PRACTICE: return T_COUNT;
     case PG_NETPLAY: return N_COUNT;
@@ -731,7 +733,7 @@ static void draw_menu(uint32_t *out)
             else if (bind_set <= 1) v = cfg.keys[bind_set][i] ? SDL_GetScancodeName(cfg.keys[bind_set][i]) : "-";
             else if (bind_set == 2) v = pad_label(cfg.pad[i]);
             else if (bind_set == 3) v = cfg.hotkeys[i] ? SDL_GetScancodeName(cfg.hotkeys[i]) : "-";
-            else v = pad_label(i == 0 ? cfg.pad_menu : i == 1 ? cfg.pad_rewind : cfg.pad_fast);
+            else v = pad_label(*pad_hotkey(i));
             const char *name = bind_set <= 2 ? button_labels[i] : bind_set == 3 ? hotkey_labels[i] : pad_hotkey_labels[i];
             snprintf(b[i], 72, "%s\t%s", name, v);
         }
@@ -1128,7 +1130,7 @@ static void capture(SDL_Scancode key, int pad_button, bool clear)
     case 0: case 1: cfg.keys[bind_set][row] = clear ? SDL_SCANCODE_UNKNOWN : key; break;
     case 2: cfg.pad[row] = clear ? PAD_NONE : pad_button; break;
     case 3: cfg.hotkeys[row] = clear ? SDL_SCANCODE_UNKNOWN : key; break;
-    case 4: *(row == 0 ? &cfg.pad_menu : row == 1 ? &cfg.pad_rewind : &cfg.pad_fast) = clear ? PAD_NONE : pad_button; break;
+    case 4: *pad_hotkey(row) = clear ? PAD_NONE : pad_button; break;
     }
     menu_changed = true;
 }
@@ -1136,6 +1138,23 @@ static void capture(SDL_Scancode key, int pad_button, bool clear)
 /* ---------------------------------------------------------------- */
 /* Events                                                           */
 /* ---------------------------------------------------------------- */
+
+// Holding Back+Start quits (a tap opens the menu, as before): the pad and since when.
+#define QUIT_HOLD_MS 2000
+static SDL_JoystickID quit_pad = -1;
+static uint32_t quit_since;
+
+static void check_quit_hold(void)
+{
+    SDL_GameController *c = quit_pad >= 0 ? SDL_GameControllerFromInstanceID(quit_pad) : NULL;
+    if (!c || !SDL_GameControllerGetButton(c, SDL_CONTROLLER_BUTTON_BACK) || !SDL_GameControllerGetButton(c, SDL_CONTROLLER_BUTTON_START)) {
+        quit_pad = -1;
+        return;
+    }
+    uint32_t held = SDL_GetTicks() - quit_since;
+    if (held >= QUIT_HOLD_MS) quit_requested = true;
+    else if (held >= 600) osd_message("Keep holding to quit... %u", (QUIT_HOLD_MS - held + 999) / 1000);
+}
 
 /* returns false to quit */
 static bool handle_events(void)
@@ -1157,7 +1176,10 @@ static bool handle_events(void)
             if (menu_open && capturing >= 0 && ev.caxis.value > 20000) {
                 if (ev.caxis.axis == SDL_CONTROLLER_AXIS_TRIGGERLEFT) capture(0, PAD_LT, false);
                 if (ev.caxis.axis == SDL_CONTROLLER_AXIS_TRIGGERRIGHT) capture(0, PAD_RT, false);
-            }
+            } else if (ev.caxis.value > 20000 &&
+                       ((ev.caxis.axis == SDL_CONTROLLER_AXIS_TRIGGERLEFT && cfg.pad_quit == PAD_LT) ||
+                        (ev.caxis.axis == SDL_CONTROLLER_AXIS_TRIGGERRIGHT && cfg.pad_quit == PAD_RT)))
+                quit_requested = true;
             break;
         case SDL_CONTROLLERBUTTONDOWN: {
             int b = ev.cbutton.button;
@@ -1165,6 +1187,9 @@ static bool handle_events(void)
             SDL_GameController *c = SDL_GameControllerFromInstanceID(ev.cbutton.which);
             bool combo = c && ((b == SDL_CONTROLLER_BUTTON_START && SDL_GameControllerGetButton(c, SDL_CONTROLLER_BUTTON_BACK)) ||
                                (b == SDL_CONTROLLER_BUTTON_BACK && SDL_GameControllerGetButton(c, SDL_CONTROLLER_BUTTON_START)));
+            if (cfg.pad_quit != PAD_NONE && b == cfg.pad_quit) { quit_requested = true; break; }
+            if (combo && quit_pad == ev.cbutton.which) break;     // the pair's other button: one press, one toggle
+            if (combo) { quit_pad = ev.cbutton.which; quit_since = SDL_GetTicks(); }
             if ((cfg.pad_menu != PAD_NONE && b == cfg.pad_menu) || combo) { menu_toggle(); break; }
             if (!menu_open) break;
             menu_nav(b == SDL_CONTROLLER_BUTTON_DPAD_UP ? -1 : b == SDL_CONTROLLER_BUTTON_DPAD_DOWN ? 1 : 0,
@@ -1186,7 +1211,10 @@ static bool handle_events(void)
                 break;
             }
             bool alt_enter = sc == SDL_SCANCODE_RETURN && (ev.key.keysym.mod & KMOD_ALT);
+            if (is_hotkey(sc, HK_QUIT)) { quit_requested = true; break; }
             if (sc == SDL_SCANCODE_ESCAPE && menu_open) { if (!ev.key.repeat) menu_back(); break; }
+            // started by a launcher: Esc quits, as in MAME and RetroArch (F1 opens the menu)
+            if (sc == SDL_SCANCODE_ESCAPE && launch_active() && !is_hotkey(sc, HK_MENU)) { quit_requested = true; break; }
             if (sc == SDL_SCANCODE_ESCAPE || is_hotkey(sc, HK_MENU)) { if (!ev.key.repeat) menu_toggle(); break; }
             if (menu_open && !alt_enter) {
                 menu_nav(sc == SDL_SCANCODE_UP ? -1 : sc == SDL_SCANCODE_DOWN ? 1 : 0,
@@ -1223,6 +1251,7 @@ static bool handle_events(void)
         }
         }
     }
+    check_quit_hold();
     return !quit_requested;
 }
 

@@ -33,6 +33,7 @@
 #include "rec_build.h"
 #include "game.h"
 #include "training.h"
+#include "launch.h"
 #include "picker.h"
 
 #define CPU_HZ        100000000
@@ -120,11 +121,16 @@ const char *data_dir(void)
     return dir;
 }
 
-// Use `name` if it exists, otherwise look beside the executable and in run/
-// there, in run/ beside an AppImage, then in run/ in the data folder.
+// Use `name` if it exists, otherwise look in the folders of a game a launcher
+// passed, beside the executable and in run/ there, in run/ beside an
+// AppImage, then in run/ in the data folder.
 const char *find_data(const char *name, char *buf, size_t n)
 {
     if (readable(name)) return name;
+    for (int i = 0; launch_dir(i); i++) {
+        snprintf(buf, n, "%s%s", launch_dir(i), name);
+        if (readable(buf)) return buf;
+    }
     snprintf(buf, n, "%s%s", base_dir(), name);
     if (readable(buf)) return buf;
     snprintf(buf, n, "%srun/%s", base_dir(), name);
@@ -481,6 +487,8 @@ static void usage(void)
         "  --load P        start from state file P\n"
         "  --rewind-test N headless: every N frames rewind N, replay, and check the state matches\n"
         "  --runahead N    headless: run N frames ahead and roll back after each frame\n"
+        "  PATH            play the game in PATH (a MAME set's zip, its CHD or a folder), as\n"
+        "                  launchers start it: Esc quits instead of opening the menu (F1 opens it)\n"
         "  --host [PORT]   host a netplay game (default port from %s.ini, 7845)\n"
         "  --join HOST[:PORT]  join a netplay game\n"
         "  --net-host PORT / --net-join HOST:PORT\n"
@@ -516,6 +524,22 @@ bool machine_both_installed(void)
     static int both = -1;                // files don't come and go while it runs
     if (both < 0) both = installed(&game_ki1) && installed(&game_ki2);
     return both;
+}
+
+// Options followed by values (main's loop): the first scan skips the values,
+// and an argument that is neither is a game's path from a launcher.
+static int option_values(const char *a, const char *next)
+{
+    static const char *const one[] = {
+        "--rom", "--game-version", "--game", "--disk", "--settings", "--write-raw", "--sound", "--headless",
+        "--shot-every", "--script", "--trace-from", "--load", "--rewind-test", "--runahead", "--join",
+        "--net-host", "--net-join", "--net-delay", "--net-fps", "--net-sim", NULL,
+    };
+    for (int i = 0; one[i]; i++) if (!strcmp(a, one[i])) return 1;
+    if (!strcmp(a, "--save-at") || !strcmp(a, "--dis")) return 2;
+    if (!strcmp(a, "--recomp")) return 3;
+    if (!strcmp(a, "--host")) return next && next[0] != '-';     // the port is optional
+    return 0;
 }
 
 // Which game to run: --game, else the only one installed, else the picker
@@ -612,6 +636,7 @@ int main(int argc, char **argv)
         bool png = n > 4 && !strcmp(argv[2] + n - 4, ".png");
         return (png ? icon_write_png(argv[2], 256) : icon_write_ico(argv[2])) ? 0 : 1;
     }
+    const char *launch_path = NULL;
     {
         const char *want = NULL;
         bool tool = false;                   // headless runs and tools never show the picker
@@ -619,6 +644,18 @@ int main(int argc, char **argv)
             if (!strcmp(argv[i], "--game") && i + 1 < argc) want = argv[i + 1];
             if (!strcmp(argv[i], "--headless") || !strcmp(argv[i], "--recomp") || !strcmp(argv[i], "--dis") ||
                 !strcmp(argv[i], "--write-raw") || !strcmp(argv[i], "--test-shaders")) tool = true;
+            if (argv[i][0] != '-' && !launch_path) launch_path = argv[i];
+            i += option_values(argv[i], i + 1 < argc ? argv[i + 1] : NULL);
+        }
+        if (launch_path) {                   // from a launcher: that game, from its files
+            char err[4400];
+            const game_t *g = launch_open(launch_path, err, sizeof err);
+            if (!g) {
+                fprintf(stderr, "%s\n", err);
+                if (!tool) SDL_ShowSimpleMessageBox(SDL_MESSAGEBOX_ERROR, PRODUCT, err, NULL);
+                return 1;
+            }
+            if (!want) want = g->id;
         }
         if (!choose_game(want, tool)) return 0;
     }
@@ -633,7 +670,7 @@ int main(int argc, char **argv)
     snprintf(ini, sizeof ini, "%s%s.ini", data_dir(), game.id);
     config_load(ini);
     const char *rom_path = *cfg.rom ? cfg.rom : NULL;       // NULL: the configured version
-    const char *want_version = cfg.version;
+    const char *want_version = launch_version() ? launch_version() : cfg.version;   // a clone's zip: its version
     const char *disk_path = *cfg.disk ? cfg.disk : NULL;     // NULL: look for one
     const char *settings_path = NULL, *write_raw = NULL;
     const char *sound_dir = *cfg.sound ? cfg.sound : ".";
@@ -672,7 +709,7 @@ int main(int argc, char **argv)
         else if (!strcmp(argv[i], "--net-warmup")) net_warmup = 1;
         else if (!strcmp(argv[i], "--net-sim") && i + 1 < argc) sscanf(argv[++i], "%d:%d:%d", &net_lat, &net_jit, &net_loss);
         else if (!strcmp(argv[i], "--dis") && i + 2 < argc) { dis_addr = (uint32_t)strtoul(argv[++i], 0, 16); dis_count = atoi(argv[++i]); }
-        else { usage(); return 1; }
+        else if (argv[i] != launch_path) { usage(); return 1; }
     }
 
     headless_mode = headless || dis_count;

@@ -13,7 +13,7 @@ enum {
 enum { HK_MENU, HK_PAUSE, HK_STEP, HK_FAST, HK_REWIND, HK_SAVE_STATE, HK_LOAD_STATE, HK_NEXT_SLOT,
        HK_FULLSCREEN, HK_SCREENSHOT, HK_VOL_UP, HK_VOL_DOWN, HK_MUTE, HK_TEST, HK_SERVICE,
        HK_GAME_VOL_UP, HK_GAME_VOL_DOWN, HK_INPUT_DISPLAY, HK_TRAINING, HK_DUMMY_RECORD, HK_DUMMY_PLAY,
-       HK_PERF, NHOTKEYS };
+       HK_PERF, HK_QUIT, NHOTKEYS };
 
 enum { SCALE_FIT, SCALE_INTEGER, SCALE_STRETCH };
 enum { PACING_AUTO, PACING_AUDIO, PACING_VSYNC };
@@ -68,7 +68,7 @@ typedef struct {
     bool socd;                 // left+right = neutral, up+down = up (keyboards, hitboxes)
     bool rumble;
     bool pause_unfocused, mute_unfocused;
-    int  pad_menu, pad_rewind, pad_fast;   // gamepad hotkeys (PAD_NONE = unbound)
+    int  pad_menu, pad_rewind, pad_fast, pad_quit;   // gamepad hotkeys (PAD_NONE = unbound)
 } config_t;
 
 extern config_t cfg;

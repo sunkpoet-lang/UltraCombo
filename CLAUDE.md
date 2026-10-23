@@ -46,6 +46,7 @@ The game's ROMs, disk image and code are copyrighted. This repo is public.
 | Game-setting tweaks, e.g. CPU difficulty | `adjust.c/h` |
 | Icon (drawn in code) and PNG writer | `icon.c/h`, `png.c/h`, `ki2.rc` |
 | Program entry, CLI, `data_dir()`/`base_dir()`/`find_data()` | `main.c` |
+| Started by a launcher with a game's path: which game, MAME zips unpacked into `cache/roms/` (miniz from libchdr's deps), the folders `find_data()` looks in first | `launch.c/h` |
 
 ## Two games
 

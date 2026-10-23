@@ -41,11 +41,11 @@ static const char *const hotkey_names[NHOTKEYS] = {
     "menu", "pause", "frame_advance", "fast_forward", "rewind", "save_state", "load_state", "next_slot",
     "fullscreen", "screenshot", "volume_up", "volume_down", "mute", "test", "service",
     "game_volume_up", "game_volume_down", "input_display", "training", "dummy_record", "dummy_play",
-    "performance",
+    "performance", "quit",
 };
 static const char *const hotkey_defaults[NHOTKEYS] = {
     "F1", "P", ".", "Tab", "Backspace", "F5", "F7", "F6",
-    "F11", "F12", "=", "-", "M", "F2", "9", "PageUp", "PageDown", "F3", "F4", "F8", "F9", "F10",
+    "F11", "F12", "=", "-", "M", "F2", "9", "PageUp", "PageDown", "F3", "F4", "F8", "F9", "F10", "",
 };
 
 #define MAX_OPTS 256
@@ -151,7 +151,8 @@ static void build_table(void)
     for (int h = 0; h < NHOTKEYS; h++) {
         snprintf(hk_keys[h], 24, "%s", hotkey_defaults[h]);
         add("hotkeys", hotkey_names[h], T_KEY, &cfg.hotkeys[h], hk_keys[h],
-            h == HK_MENU ? "settings menu (Esc also opens it)" : h == HK_FAST ? "hold to fast-forward" :
+            h == HK_MENU ? "settings menu (Esc also opens it, unless a launcher started the game: then Esc quits)" :
+            h == HK_QUIT ? "quit at once, e.g. for launchers that close the game with a key" : h == HK_FAST ? "hold to fast-forward" :
             h == HK_REWIND ? "hold to rewind" : h == HK_STEP ? "while paused, advance one frame" :
             h == HK_DUMMY_RECORD ? "training: record player 2's actions with your controls" : 0, 0);
     }
@@ -169,6 +170,7 @@ static void build_table(void)
     add("gamepad", "menu", T_PAD, &cfg.pad_menu, "guide", "hotkeys on the pad (Back+Start also opens the menu)", 0);
     add("gamepad", "rewind", T_PAD, &cfg.pad_rewind, "", "hold to rewind, e.g. leftshoulder", 0);
     add("gamepad", "fast_forward", T_PAD, &cfg.pad_fast, "", "hold to fast-forward, e.g. lefttrigger", 0);
+    add("gamepad", "quit", T_PAD, &cfg.pad_quit, "", "quit at once (holding Back+Start for 2 seconds also quits)", 0);
 }
 
 static int parse_pad(const char *v)

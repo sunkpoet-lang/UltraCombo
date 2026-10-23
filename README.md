@@ -131,6 +131,35 @@ searched for the game files. With the AppImage, make a `run/` folder beside
 the `.AppImage`: the game files go in it, and settings and the cache go
 beside the AppImage too.
 
+### Starting from a launcher
+
+Launchers (LaunchBox and Big Box, Playnite, ES-DE, Pegasus, Attract-Mode,
+Steam) start the program with a game's path, and it plays the game straight
+from your MAME folder:
+
+    UltraCombo.exe "D:\MAME\roms\kinst2.zip"
+    ./UltraCombo-x86_64.AppImage ~/mame/roms/kinst.zip
+
+The path can be a MAME set's zip (merged, split or non-merged; the clone
+`kinst14.zip` starts L1.4), the CHD (`roms/kinst2/kinst2.chd`) or a folder
+with the files. The zip's ROMs are unpacked once into `cache/roms/`; the CHD
+is read where MAME keeps it, in `roms/kinst2/` beside the zip. Started this
+way the game starts at once, **Esc quits** (F1 opens the menu), and Change
+game is hidden: the launcher does the choosing.
+
+| Launcher | Set up |
+|---|---|
+| LaunchBox / Big Box | Add an emulator: application path `UltraCombo.exe`, no parameters (the game's path is passed for you), for the games' platform (Arcade) |
+| Playnite | Configure Emulators → Add: executable `UltraCombo.exe`, arguments `"{ImagePath}"` |
+| ES-DE | A command for the arcade (or mame) system in a custom `es_systems.xml`: `"C:\Games\UltraCombo\UltraCombo.exe" %ROM%` |
+| Pegasus | `launch: "C:/Games/UltraCombo/UltraCombo.exe" "{file.path}"` |
+| Attract-Mode | Executable `UltraCombo.exe`, arguments `"[rompath][name][romext]"` |
+| Steam (and Steam Deck) | Add a Non-Steam Game, launch options `--game ki2` (or a path as above) |
+
+From a controller, hold Back+Start for two seconds to quit, however the game
+was started. A `quit` key or pad button can be set in the menu (Controls →
+Hotkeys / Gamepad hotkeys) for launchers that close games with their own key.
+
 ## Controls
 
 | Action | Player 1 | Player 2 | Pad (Xbox names) |
@@ -149,7 +178,8 @@ first pad connected is player 1, the second player 2.
 
 | Hotkey | |
 |---|---|
-| Esc or F1 | Menu (pad: Guide, or Back+Start) |
+| Esc or F1 | Menu (pad: Guide, or tap Back+Start); Esc quits when a launcher started the game |
+| Hold Back+Start (pad) | Quit, after two seconds |
 | F5 / F7 | Save / load state in the current slot |
 | F6 | Next state slot (1-9) |
 | Backspace (hold) | Rewind |
