@@ -267,7 +267,9 @@ uint64_t state_quick_hash(void)
 {
     core_io(core_tmp, false);
     uint64_t h = fnv(0xcbf29ce484222325ull, core_tmp, core_len);
-    return game.vars_len ? fnv(h, ram2 + game.vars, game.vars_len) : h;
+    // (only inside RAM 2: past its end is the host program's own memory, different on each side)
+    bool vars_ok = game.vars_len && game.vars < RAM2_SIZE && game.vars_len <= RAM2_SIZE - game.vars;
+    return vars_ok ? fnv(h, ram2 + game.vars, game.vars_len) : h;
 }
 
 uint64_t state_hash(void)

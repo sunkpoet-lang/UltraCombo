@@ -34,12 +34,20 @@ double net_now_ms(void)
     return (double)(now - t0) * 1000.0 / (double)SDL_GetPerformanceFrequency();
 }
 
-bool net_open(int port)
+// Winsock must be started before any socket call, getaddrinfo included (a
+// guest resolves the host's name before opening its socket)
+static bool net_start(void)
 {
 #ifdef _WIN32
     static bool wsa;
     if (!wsa) { WSADATA w; if (WSAStartup(MAKEWORD(2, 2), &w)) return false; wsa = true; }
 #endif
+    return true;
+}
+
+bool net_open(int port)
+{
+    if (!net_start()) return false;
     net_close();
     sock = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
     if (sock == BAD_SOCK) return false;
@@ -69,6 +77,7 @@ void net_close(void)
 
 bool net_resolve(const char *host, int port, net_addr_t *out)
 {
+    if (!net_start()) return false;
     struct addrinfo hints = { 0 }, *res = NULL;
     hints.ai_family = AF_INET;
     hints.ai_socktype = SOCK_DGRAM;
